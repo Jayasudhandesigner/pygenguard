@@ -146,7 +146,7 @@ class AsyncGuard:
     
     async def _run_sync_plane(self, func, *args) -> PlaneResult:
         """Run a synchronous plane in the thread pool."""
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         return await loop.run_in_executor(self._executor, func, *args)
     
     async def _run_plugins(
@@ -338,7 +338,7 @@ class AsyncGuard:
     
     async def _log_async(self, decision: Decision) -> None:
         """Log decision asynchronously."""
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         await loop.run_in_executor(self._executor, self._audit.log, decision)
     
     async def inspect_batch(
@@ -363,15 +363,18 @@ class AsyncGuard:
         
         Use when you need to call from sync code.
         """
-        loop = asyncio.get_event_loop()
-        if loop.is_running():
-            # Can't use run_until_complete in running loop
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = None
+
+        if loop and loop.is_running():
             import concurrent.futures
             with concurrent.futures.ThreadPoolExecutor() as pool:
                 future = pool.submit(asyncio.run, self.inspect(prompt, session))
                 return future.result()
         else:
-            return loop.run_until_complete(self.inspect(prompt, session))
+            return asyncio.run(self.inspect(prompt, session))
     
     async def get_session_trust(self, session: Session) -> int:
         """Get current trust score for a session."""

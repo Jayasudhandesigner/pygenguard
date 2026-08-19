@@ -4,7 +4,7 @@ Decision - The immutable result of a Guard inspection.
 
 from dataclasses import dataclass, field
 from typing import Literal, Dict, List, Optional
-from datetime import datetime
+from datetime import datetime, timezone
 import uuid
 
 
@@ -56,7 +56,7 @@ class Decision:
             allowed=True,
             action="ALLOW",
             trace_id=trace_id,
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             rationale=rationale,
             plane_results=plane_results,
             combined_risk_score=cls._calculate_combined_risk(plane_results)
@@ -75,7 +75,7 @@ class Decision:
             allowed=False,
             action="BLOCK",
             trace_id=trace_id,
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             rationale=rationale,
             plane_results=plane_results,
             safe_response=safe_response,
@@ -94,7 +94,7 @@ class Decision:
             allowed=True,
             action="DEGRADE",
             trace_id=trace_id,
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             rationale=rationale,
             plane_results=plane_results,
             safe_response="Request allowed with restrictions.",

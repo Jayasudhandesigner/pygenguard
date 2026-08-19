@@ -4,7 +4,7 @@ Session - Request context for security evaluation.
 
 from dataclasses import dataclass, field
 from typing import List, Optional, Dict, Any
-from datetime import datetime
+from datetime import datetime, timezone
 import hashlib
 
 
@@ -37,7 +37,7 @@ class Session:
     
     # Token tracking (for economics plane)
     tokens_used_session: int = 0
-    session_start_time: float = field(default_factory=lambda: datetime.utcnow().timestamp())
+    session_start_time: float = field(default_factory=lambda: datetime.now(timezone.utc).timestamp())
     
     # Metadata
     metadata: Dict[str, Any] = field(default_factory=dict)
@@ -73,7 +73,7 @@ class Session:
                 chat_history.append(ChatTurn(
                     role=turn.get("role", "user"),
                     content=turn.get("content", ""),
-                    timestamp=turn.get("timestamp", datetime.utcnow().timestamp())
+                    timestamp=turn.get("timestamp", datetime.now(timezone.utc).timestamp())
                 ))
         
         return cls(
@@ -98,7 +98,7 @@ class Session:
         self.history.append(ChatTurn(
             role=role,
             content=content,
-            timestamp=datetime.utcnow().timestamp()
+            timestamp=datetime.now(timezone.utc).timestamp()
         ))
     
     def get_full_context(self) -> str:
@@ -111,7 +111,10 @@ class Session:
     
     def get_burn_rate(self) -> float:
         """Calculate tokens per second for this session."""
-        elapsed = datetime.utcnow().timestamp() - self.session_start_time
-        if elapsed <= 0:
-            return 0.0
+        elapsed = datetime.now(timezone.utc).timestamp() - self.session_start_time
+        if elapsed < 1.0:
+            # During the first second of a session, use 1.0s window minimum
+            # to avoid false token/sec spikes on instant single-turn prompts
+            return float(self.tokens_used_session)
         return self.tokens_used_session / elapsed
+
