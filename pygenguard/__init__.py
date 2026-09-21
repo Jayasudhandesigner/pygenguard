@@ -111,7 +111,14 @@ from pygenguard.utils.decoders import (
 )
 
 # BYOK & Hybrid LLM Judge
-from pygenguard.byok import BYOKConfig, JudgeVerdict, BYOKLLMJudge
+from pygenguard.byok import (
+    BYOKConfig,
+    JudgeVerdict,
+    BYOKLLMJudge,
+    BYOKConfidenceVerdict,
+    AsyncBYOKConfidenceDecider,
+    BYOKConfidenceDecider,
+)
 from pygenguard.hybrid import HybridGuardEngine, HybridDecision
 
 # SaaS Multi-Tenancy & Server Farms
@@ -151,7 +158,6 @@ from pygenguard.harness import (
 from pygenguard.audit.benchmark import (
     BenchmarkHarness, BenchmarkMetric
 )
-
 
 # Truth & Consistency Engine
 from pygenguard.consistency import (
@@ -218,6 +224,7 @@ __all__ = [
     "decode_rot13", "decode_caesar", "decode_binary",
     # BYOK & Hybrid LLM Judge
     "BYOKConfig", "JudgeVerdict", "BYOKLLMJudge",
+    "BYOKConfidenceVerdict", "AsyncBYOKConfidenceDecider", "BYOKConfidenceDecider",
     "HybridGuardEngine", "HybridDecision",
     # SaaS Multi-Tenancy & Server Farms
     "TenantConfig", "TenantManager", "ClusterNodeInfo",
