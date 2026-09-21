@@ -6,7 +6,7 @@ For local development and testing. Not suitable for distributed systems.
 
 from typing import Optional, Dict, List
 from threading import Lock
-from datetime import datetime
+from datetime import datetime, timezone
 
 from pygenguard.adapters.base import BaseSessionStore, SessionData, AsyncBaseSessionStore
 
@@ -47,11 +47,11 @@ class InMemorySessionStore(BaseSessionStore):
         """Check if a session has expired."""
         if expiry is None:
             return False
-        return datetime.utcnow().timestamp() > expiry
+        return datetime.now(timezone.utc).timestamp() > expiry
     
     def _cleanup_expired(self) -> None:
         """Remove expired sessions (called internally)."""
-        now = datetime.utcnow().timestamp()
+        now = datetime.now(timezone.utc).timestamp()
         expired = [
             uid for uid, (_, expiry) in self._store.items()
             if expiry and now > expiry
@@ -79,7 +79,7 @@ class InMemorySessionStore(BaseSessionStore):
             effective_ttl = ttl if ttl is not None else self._default_ttl
             expiry = None
             if effective_ttl:
-                expiry = datetime.utcnow().timestamp() + effective_ttl
+                expiry = datetime.now(timezone.utc).timestamp() + effective_ttl
             
             self._store[user_id] = (data, expiry)
             return True

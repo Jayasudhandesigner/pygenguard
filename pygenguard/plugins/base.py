@@ -22,7 +22,8 @@ class PlanePhase(Enum):
     POST_INTENT = 2       # After intent, before context
     POST_CONTEXT = 3      # After context, before economics
     POST_ECONOMICS = 4    # After economics, before compliance
-    POST_COMPLIANCE = 5   # After all built-in planes
+    POST_COMPLIANCE = 5   # After all built-in input planes
+    POST_OUTPUT = 6       # Output inspection plugins
 
 
 @dataclass

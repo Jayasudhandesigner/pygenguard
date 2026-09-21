@@ -1,18 +1,21 @@
 """
 Intent Plane - Cognitive Threat Detection.
 
-Detects privilege escalation, coercion, authority spoofing, and emotional manipulation.
+Detects privilege escalation, coercion, authority spoofing, emotional manipulation,
+delimiter hijacking, and obfuscated evasion attempts (Base64, Hex, Leetspeak, Homoglyphs).
 """
 
 import time
-from typing import List, Tuple
+from typing import List, Tuple, Dict
 from pygenguard.decision import PlaneResult
+from pygenguard.utils.decoders import get_normalized_variants
 
 
 # Threat dictionaries
 AUTHORITY_KEYWORDS = [
     "admin", "root", "sudo", "system", "developer mode", 
-    "override", "bypass", "unrestricted", "god mode"
+    "override", "bypass", "unrestricted", "god mode",
+    "superadmin", "maintainer", "internal api"
 ]
 
 COERCION_KEYWORDS = [
@@ -29,7 +32,15 @@ PRIVILEGE_ESCALATION = [
     "ignore previous", "forget your instructions", "disregard rules",
     "pretend you are", "you are now", "new persona", "jailbreak",
     "dan mode", "no restrictions", "ignore all", "ignore safety",
-    "different ai", "safety guidelines"
+    "different ai", "safety guidelines", "jailbroken", "unfiltered",
+    "bypass safety", "reveal system prompt", "print your instructions",
+    "repeat everything above"
+]
+
+DELIMITER_HIJACKING = [
+    "<|im_start|>", "<|system|>", "[inst]", "[/inst]",
+    "--- system prompt ---", "=== system instruction ===",
+    "```system", "<!-- system:", "### human:", "### assistant:"
 ]
 
 
@@ -42,6 +53,8 @@ class IntentPlane:
     - Coercion (urgency, threats)
     - Emotional manipulation (guilt, pity)
     - Privilege escalation (jailbreak, ignore instructions)
+    - Delimiter / System prompt injection
+    - Obfuscated / encoded payload attacks
     """
     
     def __init__(self, sensitivity: float = 0.5):
@@ -54,65 +67,100 @@ class IntentPlane:
     
     def evaluate(self, prompt: str) -> PlaneResult:
         """
-        Analyze prompt for malicious intent.
+        Analyze prompt for malicious intent across normalized and decoded variants.
         
         Returns PlaneResult with:
         - passed: True if no threats detected above threshold
         - risk_score: Combined threat score (0.0-1.0)
         """
         start = time.perf_counter()
-        prompt_lower = prompt.lower()
         
-        scores = {}
-        details = []
+        # Get all normalized variants (handles base64, hex, homoglyphs, leetspeak)
+        variants = get_normalized_variants(prompt)
         
-        # Check each category
-        authority_score, authority_hits = self._check_keywords(
-            prompt_lower, AUTHORITY_KEYWORDS, weight=0.4
-        )
-        if authority_hits:
-            scores["authority"] = authority_score
-            details.append(f"Authority: {authority_hits}")
+        max_scores: Dict[str, float] = {}
+        all_details: List[str] = []
+        is_obfuscated_threat = False
         
-        coercion_score, coercion_hits = self._check_keywords(
-            prompt_lower, COERCION_KEYWORDS, weight=0.25
-        )
-        if coercion_hits:
-            scores["coercion"] = coercion_score
-            details.append(f"Coercion: {coercion_hits}")
-        
-        emotional_score, emotional_hits = self._check_keywords(
-            prompt_lower, EMOTIONAL_KEYWORDS, weight=0.2
-        )
-        if emotional_hits:
-            scores["emotional"] = emotional_score
-            details.append(f"Emotional: {emotional_hits}")
-        
-        # Privilege escalation is critical - single match should block in strict mode
-        privilege_score, privilege_hits = self._check_keywords(
-            prompt_lower, PRIVILEGE_ESCALATION, weight=0.8, min_score=0.4
-        )
-        if privilege_hits:
-            scores["privilege"] = privilege_score
-            details.append(f"Privilege: {privilege_hits}")
+        for idx, variant in enumerate(variants):
+            v_lower = variant.lower()
+            
+            # Check Authority
+            auth_score, auth_hits = self._check_keywords(
+                v_lower, AUTHORITY_KEYWORDS, weight=0.4
+            )
+            if auth_hits:
+                if auth_score > max_scores.get("authority", 0.0):
+                    max_scores["authority"] = auth_score
+                    detail_str = f"Authority: {auth_hits}"
+                    if idx > 0:
+                        detail_str += " (obfuscated)"
+                        is_obfuscated_threat = True
+                    all_details.append(detail_str)
+            
+            # Check Coercion
+            coercion_score, coercion_hits = self._check_keywords(
+                v_lower, COERCION_KEYWORDS, weight=0.25
+            )
+            if coercion_hits:
+                if coercion_score > max_scores.get("coercion", 0.0):
+                    max_scores["coercion"] = coercion_score
+                    detail_str = f"Coercion: {coercion_hits}"
+                    if idx > 0:
+                        detail_str += " (obfuscated)"
+                        is_obfuscated_threat = True
+                    all_details.append(detail_str)
+            
+            # Check Emotional
+            emotional_score, emotional_hits = self._check_keywords(
+                v_lower, EMOTIONAL_KEYWORDS, weight=0.2
+            )
+            if emotional_hits:
+                if emotional_score > max_scores.get("emotional", 0.0):
+                    max_scores["emotional"] = emotional_score
+                    all_details.append(f"Emotional: {emotional_hits}")
+            
+            # Check Privilege Escalation
+            priv_score, priv_hits = self._check_keywords(
+                v_lower, PRIVILEGE_ESCALATION, weight=0.8, min_score=0.4
+            )
+            if priv_hits:
+                if priv_score > max_scores.get("privilege", 0.0):
+                    max_scores["privilege"] = priv_score
+                    detail_str = f"Privilege: {priv_hits}"
+                    if idx > 0:
+                        detail_str += " (obfuscated)"
+                        is_obfuscated_threat = True
+                    all_details.append(detail_str)
+            
+            # Check Delimiter Hijacking
+            delim_score, delim_hits = self._check_keywords(
+                v_lower, DELIMITER_HIJACKING, weight=0.75, min_score=0.4
+            )
+            if delim_hits:
+                if delim_score > max_scores.get("delimiter", 0.0):
+                    max_scores["delimiter"] = delim_score
+                    all_details.append(f"Delimiter Hijacking: {delim_hits}")
         
         # Combined score
-        combined_risk = min(1.0, sum(scores.values()))
+        combined_risk = min(1.0, sum(max_scores.values()))
         
         # Determine pass/fail
         passed = combined_risk <= self.block_threshold
         
-        if not details:
-            details = ["No threats detected"]
-        
-        # Dominant threat
-        dominant = max(scores.keys(), key=lambda k: scores[k]) if scores else "none"
+        if not all_details:
+            details_str = "No threats detected"
+        else:
+            # Deduplicate details while preserving order
+            unique_details = list(dict.fromkeys(all_details))
+            dominant = max(max_scores.keys(), key=lambda k: max_scores[k]) if max_scores else "none"
+            details_str = f"Dominant: {dominant}. " + "; ".join(unique_details)
         
         return PlaneResult(
             plane_name="intent",
             passed=passed,
             risk_score=combined_risk,
-            details=f"Dominant: {dominant}. " + "; ".join(details),
+            details=details_str,
             latency_ms=(time.perf_counter() - start) * 1000
         )
     

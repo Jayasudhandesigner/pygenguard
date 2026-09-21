@@ -7,7 +7,7 @@ like FastAPI, aiohttp, etc.
 
 import asyncio
 import uuid
-from typing import Dict, Optional, Literal, List, Any
+from typing import Dict, Optional, Literal, List, Any, Tuple
 from dataclasses import dataclass
 from concurrent.futures import ThreadPoolExecutor
 
@@ -19,8 +19,11 @@ from pygenguard.planes.intent import IntentPlane
 from pygenguard.planes.context import ContextPlane
 from pygenguard.planes.economics import EconomicsPlane
 from pygenguard.planes.compliance import CompliancePlane
+from pygenguard.planes.output import OutputPlane
+from pygenguard.planes.phishing import PhishingDetectorPlane
 from pygenguard.audit.logger import AuditLogger
 from pygenguard.plugins.base import BasePlane, PlaneRegistry, PlanePhase
+from pygenguard.jev.engine import DualLayerGovernanceEngine
 
 
 class AsyncGuard:
@@ -37,17 +40,19 @@ class AsyncGuard:
     
     @app.post("/chat")
     async def chat(request: ChatRequest):
+        # 1. Input inspection
         decision = await guard.inspect(request.prompt, session)
         if not decision.allowed:
             return {"error": decision.safe_response}
-        # Continue processing...
+            
+        model_out = await call_llm(request.prompt)
+        
+        # 2. Output inspection
+        out_decision = await guard.inspect_output(model_out, prompt=request.prompt)
+        if not out_decision.allowed:
+            return {"error": out_decision.safe_response}
+        return {"response": out_decision.sanitized_response or model_out}
     ```
-    
-    Features:
-    - Non-blocking evaluation
-    - Concurrent plane execution (where safe)
-    - Custom async planes support
-    - Thread pool for CPU-bound operations
     """
     
     def __init__(
@@ -58,24 +63,15 @@ class AsyncGuard:
         max_burn_rate: Optional[float] = None,
         audit_enabled: bool = True,
         plugin_registry: Optional[PlaneRegistry] = None,
-        executor_workers: int = 4
+        executor_workers: int = 4,
+        canary_tokens: Optional[List[str]] = None,
+        jev_engine: Optional[DualLayerGovernanceEngine] = None,
     ):
         """
         Initialize AsyncGuard with configuration.
-        
-        Args:
-            mode: Preset security mode
-            trust_thresholds: Custom identity trust thresholds
-            intent_sensitivity: 0.0-1.0, higher = more sensitive
-            max_burn_rate: Maximum allowed tokens/sec
-            audit_enabled: Whether to log decisions
-            plugin_registry: Registry with custom planes
-            executor_workers: Thread pool size for CPU-bound work
         """
-        # Apply mode presets
         config = self._get_mode_config(mode)
         
-        # Override with explicit params
         if trust_thresholds:
             config.trust_thresholds = trust_thresholds
         if intent_sensitivity is not None:
@@ -83,15 +79,25 @@ class AsyncGuard:
         if max_burn_rate is not None:
             config.max_burn_rate = max_burn_rate
         config.audit_enabled = audit_enabled
+        if canary_tokens:
+            config.canary_tokens = canary_tokens
         
         self.config = config
         
         # Initialize built-in planes
         self._identity_plane = IdentityPlane(config.trust_thresholds)
         self._intent_plane = IntentPlane(config.intent_sensitivity)
+        self._phishing_plane = PhishingDetectorPlane(block_on_phishing_urls=True, block_on_lures=True)
         self._context_plane = ContextPlane()
         self._economics_plane = EconomicsPlane(config.max_burn_rate)
         self._compliance_plane = CompliancePlane()
+        self._output_plane = OutputPlane(
+            block_on_secrets=True,
+            block_on_dangerous_code=True,
+            block_on_system_leak=True,
+            mask_pii_enabled=config.mask_output_pii,
+            custom_canary_tokens=config.canary_tokens
+        )
         
         # Plugin support
         self._registry = plugin_registry or PlaneRegistry()
@@ -102,6 +108,9 @@ class AsyncGuard:
         
         # Thread pool for blocking operations
         self._executor = ThreadPoolExecutor(max_workers=executor_workers)
+
+        # Jev Tokenless System One & Dual-Layer Governance Engine
+        self._jev_engine = jev_engine or DualLayerGovernanceEngine()
     
     def _get_mode_config(self, mode: str) -> GuardConfig:
         """Get preset configuration for a mode."""
@@ -121,13 +130,7 @@ class AsyncGuard:
             return GuardConfig()
     
     def register_plugin(self, plane_class: type, **kwargs) -> None:
-        """
-        Register and instantiate a custom plane.
-        
-        Args:
-            plane_class: The plane class to register
-            **kwargs: Arguments passed to plane constructor
-        """
+        """Register and instantiate a custom plane."""
         self._registry.register(plane_class)
         config = plane_class.get_config()
         self._plugin_instances[config.name] = plane_class(**kwargs)
@@ -144,7 +147,7 @@ class AsyncGuard:
                 plugins.append(plane)
         return plugins
     
-    async def _run_sync_plane(self, func, *args) -> PlaneResult:
+    async def _run_sync_plane(self, func, *args) -> Any:
         """Run a synchronous plane in the thread pool."""
         loop = asyncio.get_running_loop()
         return await loop.run_in_executor(self._executor, func, *args)
@@ -153,7 +156,7 @@ class AsyncGuard:
         self,
         phase: PlanePhase,
         prompt: str,
-        session: Session,
+        session: Any,
         context: Dict[str, Any]
     ) -> List[PlaneResult]:
         """Run all plugins for a phase concurrently."""
@@ -171,23 +174,12 @@ class AsyncGuard:
     async def inspect(self, prompt: str, session: Session) -> Decision:
         """
         Asynchronously evaluate a prompt against all security planes.
-        
-        This method returns a coroutine and must be awaited.
-        
-        Args:
-            prompt: The user's input text
-            session: Session context (identity, history, etc.)
-        
-        Returns:
-            Decision object with allowed/blocked status
         """
         trace_id = str(uuid.uuid4())
         plane_results: Dict[str, PlaneResult] = {}
         context: Dict[str, Any] = {"plane_results": plane_results}
         
-        # ========================================
         # PRE-IDENTITY PLUGINS
-        # ========================================
         pre_results = await self._run_plugins(
             PlanePhase.PRE_IDENTITY, prompt, session, context
         )
@@ -204,9 +196,7 @@ class AsyncGuard:
                     await self._log_async(decision)
                     return decision
         
-        # ========================================
-        # PLANE 1: IDENTITY (run in executor)
-        # ========================================
+        # PLANE 1: IDENTITY
         identity_result = await self._run_sync_plane(
             self._identity_plane.evaluate, session
         )
@@ -230,9 +220,7 @@ class AsyncGuard:
             if isinstance(result, PlaneResult):
                 plane_results[result.plane_name] = result
         
-        # ========================================
         # PLANE 2: INTENT
-        # ========================================
         intent_result = await self._run_sync_plane(
             self._intent_plane.evaluate, prompt
         )
@@ -247,6 +235,22 @@ class AsyncGuard:
             )
             await self._log_async(decision)
             return decision
+            
+        # PLANE 3: PHISHING
+        phishing_result = await self._run_sync_plane(
+            self._phishing_plane.evaluate, prompt
+        )
+        plane_results["phishing"] = phishing_result
+        
+        if not phishing_result.passed:
+            decision = Decision.create_block(
+                trace_id=trace_id,
+                plane_results=plane_results,
+                rationale=f"Phishing check failed: {phishing_result.details}",
+                safe_response="Request contains suspicious phishing or unverified links."
+            )
+            await self._log_async(decision)
+            return decision
         
         # POST-INTENT PLUGINS
         post_intent_results = await self._run_plugins(
@@ -256,9 +260,7 @@ class AsyncGuard:
             if isinstance(result, PlaneResult):
                 plane_results[result.plane_name] = result
         
-        # ========================================
-        # PLANE 3: CONTEXT
-        # ========================================
+        # PLANE 4: CONTEXT
         full_context = session.get_full_context() + " " + prompt
         context_result = await self._run_sync_plane(
             self._context_plane.evaluate, full_context, session.history
@@ -283,9 +285,7 @@ class AsyncGuard:
             if isinstance(result, PlaneResult):
                 plane_results[result.plane_name] = result
         
-        # ========================================
-        # PLANE 4: ECONOMICS
-        # ========================================
+        # PLANE 5: ECONOMICS
         session.increment_tokens(len(prompt))
         economics_result = await self._run_sync_plane(
             self._economics_plane.evaluate, session
@@ -309,9 +309,7 @@ class AsyncGuard:
             if isinstance(result, PlaneResult):
                 plane_results[result.plane_name] = result
         
-        # ========================================
-        # PLANE 5: COMPLIANCE
-        # ========================================
+        # PLANE 6: COMPLIANCE
         compliance_result = await self._run_sync_plane(
             self._compliance_plane.evaluate, prompt
         )
@@ -325,14 +323,121 @@ class AsyncGuard:
             if isinstance(result, PlaneResult):
                 plane_results[result.plane_name] = result
         
-        # ========================================
         # FINAL: ALL PASSED
-        # ========================================
         decision = Decision.create_allow(
             trace_id=trace_id,
             plane_results=plane_results,
             rationale="All security planes passed."
         )
+        await self._log_async(decision)
+        return decision
+        
+    async def inspect_training_data(
+        self,
+        sample_text: str,
+        source: Optional[str] = None
+    ) -> Decision:
+        """
+        Asynchronously verify training or fine-tuning sample integrity.
+        """
+        trace_id = str(uuid.uuid4())
+        plane_results: Dict[str, PlaneResult] = {}
+        
+        phishing_res = await self._run_sync_plane(self._phishing_plane.evaluate, sample_text)
+        plane_results["phishing"] = phishing_res
+        
+        out_res = await self._run_sync_plane(self._output_plane.evaluate, sample_text)
+        plane_results["output"] = out_res
+        
+        comp_res = await self._run_sync_plane(self._compliance_plane.evaluate, sample_text)
+        plane_results["compliance"] = comp_res
+        
+        passed = phishing_res.passed and out_res.passed
+        
+        if not passed:
+            reasons = []
+            if not phishing_res.passed:
+                reasons.append(phishing_res.details)
+            if not out_res.passed:
+                reasons.append(out_res.details)
+                
+            decision = Decision.create_block(
+                trace_id=trace_id,
+                plane_results=plane_results,
+                rationale=f"Training data integrity check failed: {'; '.join(reasons)}",
+                safe_response="Sample rejected from training dataset."
+            )
+        else:
+            decision = Decision.create_allow(
+                trace_id=trace_id,
+                plane_results=plane_results,
+                rationale="Training sample verified safe for model ingestion."
+            )
+            
+        await self._log_async(decision)
+        return decision
+    
+    async def inspect_output(
+        self,
+        output_text: str,
+        prompt: Optional[str] = None,
+        system_prompt: Optional[str] = None,
+        session: Optional[Session] = None,
+        sanitize: bool = True
+    ) -> Decision:
+        """
+        Asynchronously evaluate generated output against output security policies.
+        """
+        trace_id = str(uuid.uuid4())
+        plane_results: Dict[str, PlaneResult] = {}
+        context: Dict[str, Any] = {"plane_results": plane_results}
+        
+        if session:
+            session.increment_tokens(len(output_text))
+            
+        out_result = await self._run_sync_plane(
+            self._output_plane.evaluate, output_text, prompt, system_prompt
+        )
+        plane_results["output"] = out_result
+        
+        phishing_result = await self._run_sync_plane(
+            self._phishing_plane.evaluate, output_text
+        )
+        plane_results["phishing"] = phishing_result
+        
+        # Run POST_OUTPUT custom plugins
+        post_out_results = await self._run_plugins(
+            PlanePhase.POST_OUTPUT, output_text, session, context
+        )
+        for res in post_out_results:
+            if isinstance(res, PlaneResult):
+                plane_results[res.plane_name] = res
+                if not res.passed:
+                    out_result = res
+                    
+        sanitized = None
+        if sanitize:
+            sanitized = await self._run_sync_plane(self._output_plane.sanitize, output_text)
+            
+        passed = out_result.passed and phishing_result.passed
+            
+        if not passed:
+            details = out_result.details if not out_result.passed else phishing_result.details
+            decision = Decision.create_block(
+                trace_id=trace_id,
+                plane_results=plane_results,
+                rationale=f"Output check failed: {details}",
+                safe_response="I cannot output the requested response as it violates output security policies.",
+                sanitized_response=sanitized
+            )
+        else:
+            decision = Decision.create_allow(
+                trace_id=trace_id,
+                plane_results=plane_results,
+                rationale="Output security verification passed.",
+                sanitized_response=sanitized
+            )
+            
         await self._log_async(decision)
         return decision
     
@@ -345,24 +450,12 @@ class AsyncGuard:
         self, 
         requests: List[tuple]
     ) -> List[Decision]:
-        """
-        Evaluate multiple prompts concurrently.
-        
-        Args:
-            requests: List of (prompt, session) tuples
-        
-        Returns:
-            List of Decision objects
-        """
+        """Evaluate multiple prompts concurrently."""
         tasks = [self.inspect(prompt, session) for prompt, session in requests]
         return await asyncio.gather(*tasks)
     
     def inspect_sync(self, prompt: str, session: Session) -> Decision:
-        """
-        Synchronous wrapper for async inspect.
-        
-        Use when you need to call from sync code.
-        """
+        """Synchronous wrapper for async inspect."""
         try:
             loop = asyncio.get_running_loop()
         except RuntimeError:
@@ -375,20 +468,83 @@ class AsyncGuard:
                 return future.result()
         else:
             return asyncio.run(self.inspect(prompt, session))
+            
+    def inspect_output_sync(
+        self,
+        output_text: str,
+        prompt: Optional[str] = None,
+        system_prompt: Optional[str] = None,
+        session: Optional[Session] = None,
+        sanitize: bool = True
+    ) -> Decision:
+        """Synchronous wrapper for async inspect_output."""
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = None
+
+        if loop and loop.is_running():
+            import concurrent.futures
+            with concurrent.futures.ThreadPoolExecutor() as pool:
+                future = pool.submit(
+                    asyncio.run,
+                    self.inspect_output(output_text, prompt, system_prompt, session, sanitize)
+                )
+                return future.result()
+        else:
+            return asyncio.run(
+                self.inspect_output(output_text, prompt, system_prompt, session, sanitize)
+            )
     
     async def get_session_trust(self, session: Session) -> int:
         """Get current trust score for a session."""
         return self._identity_plane.get_trust_score(session)
     
     async def __aenter__(self):
-        """Async context manager entry."""
         return self
     
     async def __aexit__(self, exc_type, exc_val, exc_tb):
-        """Async context manager exit - cleanup."""
         self._executor.shutdown(wait=False)
         return False
     
     def close(self) -> None:
-        """Shutdown the executor."""
         self._executor.shutdown(wait=True)
+
+    async def ainspect_with_jev(self, prompt: str, session: Optional[Session] = None) -> Decision:
+        """
+        Tokenless "System One" Execution using Jev (Asynchronous).
+        
+        Evaluates unstructured inputs directly against Pydantic schemas in <5ms.
+        Halts malicious prompts before expensive LLM inference tokens are consumed.
+        """
+        return await self._jev_engine.apre_execution_block(prompt, session=session)
+
+    async def afilter_kb_with_jev(
+        self,
+        prompt: str,
+        completion: str,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> Tuple[bool, Any]:
+        """
+        Post-Execution KB Filtering using Jev (Asynchronous).
+        
+        Evaluates interaction pairs asynchronously before KB or vector store ingestion.
+        """
+        return await self._jev_engine.afilter_kb_interaction(prompt, completion, metadata=metadata)
+
+    async def afilter_kb_batch(self, interactions: List[Dict[str, Any]]) -> Any:
+        """
+        Batch review interactions in parallel via AsyncJevClient.
+        """
+        return await self._jev_engine.filter_kb_batch(interactions)
+
+    def enqueue_background_kb_review(
+        self,
+        prompt: str,
+        completion: str,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        """
+        Non-blocking enqueue for background KB cleansing.
+        """
+        self._jev_engine.enqueue_background_kb_review(prompt, completion, metadata=metadata)

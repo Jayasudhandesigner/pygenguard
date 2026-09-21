@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pygenguard"
-version = "0.2.0"
+version = "1.0.0"
 description = "Runtime security and governance framework for GenAI systems"
 readme = "README.md"
 license = {text = "Apache-2.0"}
@@ -40,7 +40,12 @@ classifiers = [
 ]
 
 # ZERO heavy dependencies - pure Python core
-dependencies = []
+dependencies = [
+    "pydantic>=2.0.0"
+]
+
+[project.scripts]
+pygenguard = "pygenguard.cli.main:main"
 
 [project.optional-dependencies]
 # Redis adapter for distributed sessions
@@ -62,10 +67,10 @@ all = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/Jayasudhandesigner/pytrialguard"
-Documentation = "https://github.com/Jayasudhandesigner/pytrialguard#readme"
-Repository = "https://github.com/Jayasudhandesigner/pytrialguard"
-Issues = "https://github.com/Jayasudhandesigner/pytrialguard/issues"
+Homepage = "https://github.com/Jayasudhandesigner/pygenguard"
+Documentation = "https://github.com/Jayasudhandesigner/pygenguard#readme"
+Repository = "https://github.com/Jayasudhandesigner/pygenguard"
+Issues = "https://github.com/Jayasudhandesigner/pygenguard/issues"
 
 [tool.setuptools.packages.find]
 where = ["."]

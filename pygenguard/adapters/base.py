@@ -7,7 +7,7 @@ Defines the contract for session storage backends.
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field, asdict
 from typing import Optional, Dict, Any, List
-from datetime import datetime
+from datetime import datetime, timezone
 import json
 
 
@@ -21,9 +21,9 @@ class SessionData:
     user_id: str
     fingerprint: str
     trust_score: int = 100
-    last_seen: float = field(default_factory=lambda: datetime.utcnow().timestamp())
+    last_seen: float = field(default_factory=lambda: datetime.now(timezone.utc).timestamp())
     tokens_used: int = 0
-    session_start: float = field(default_factory=lambda: datetime.utcnow().timestamp())
+    session_start: float = field(default_factory=lambda: datetime.now(timezone.utc).timestamp())
     history_summary: str = ""  # Compact history representation
     metadata: Dict[str, Any] = field(default_factory=dict)
     
@@ -133,7 +133,7 @@ class BaseSessionStore(ABC):
         if data is None:
             return False
         data.trust_score = trust_score
-        data.last_seen = datetime.utcnow().timestamp()
+        data.last_seen = datetime.now(timezone.utc).timestamp()
         return self.set(user_id, data)
     
     def increment_tokens(self, user_id: str, count: int) -> bool:
@@ -147,7 +147,7 @@ class BaseSessionStore(ABC):
         if data is None:
             return False
         data.tokens_used += count
-        data.last_seen = datetime.utcnow().timestamp()
+        data.last_seen = datetime.now(timezone.utc).timestamp()
         return self.set(user_id, data)
     
     def touch(self, user_id: str) -> bool:
@@ -159,7 +159,7 @@ class BaseSessionStore(ABC):
         data = self.get(user_id)
         if data is None:
             return False
-        data.last_seen = datetime.utcnow().timestamp()
+        data.last_seen = datetime.now(timezone.utc).timestamp()
         return self.set(user_id, data)
     
     def get_all_users(self) -> List[str]:
@@ -215,7 +215,7 @@ class AsyncBaseSessionStore(ABC):
         if data is None:
             return False
         data.trust_score = trust_score
-        data.last_seen = datetime.utcnow().timestamp()
+        data.last_seen = datetime.now(timezone.utc).timestamp()
         return await self.set(user_id, data)
     
     async def close(self) -> None:

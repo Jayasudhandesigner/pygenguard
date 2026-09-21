@@ -1,5 +1,8 @@
 """
 Session - Request context for security evaluation.
+
+v1.0: Extended with agentic orchestration context (agent IDs, tool tracking,
+delegation depth, step counts, and tenant multi-tenancy).
 """
 
 from dataclasses import dataclass, field
@@ -14,6 +17,16 @@ class ChatTurn:
     role: str  # "user" or "assistant"
     content: str
     timestamp: float
+
+
+@dataclass
+class ToolCallRecord:
+    """Record of a tool call made during an agent session."""
+    tool_name: str
+    arguments: Dict[str, Any]
+    timestamp: float = field(default_factory=lambda: datetime.now(timezone.utc).timestamp())
+    result: Optional[Any] = None
+    blocked: bool = False
 
 
 @dataclass
@@ -41,13 +54,28 @@ class Session:
     
     # Metadata
     metadata: Dict[str, Any] = field(default_factory=dict)
+
+    # ==========================================
+    # v1.0: Agentic & Multi-Tenancy Context
+    # ==========================================
+    tenant_id: Optional[str] = None
+    role: Optional[str] = None
+    agent_id: Optional[str] = None
+    allowed_tools: Optional[List[str]] = None
+    tool_calls: List[ToolCallRecord] = field(default_factory=list)
+    current_step: int = 0
+    max_steps: int = 50
+    delegation_depth: int = 0
+    max_delegation_depth: int = 5
     
     @classmethod
     def from_request(
         cls,
         request: Any,
         user_id: str,
-        history: Optional[List[Dict]] = None
+        history: Optional[List[Dict]] = None,
+        tenant_id: Optional[str] = None,
+        role: Optional[str] = None,
     ) -> "Session":
         """
         Factory to create Session from a web framework request object.
@@ -80,13 +108,43 @@ class Session:
             user_id=user_id,
             ip_address=ip,
             user_agent=user_agent,
-            history=chat_history
+            history=chat_history,
+            tenant_id=tenant_id,
+            role=role,
         )
     
     @classmethod
     def create(cls, user_id: str, **kwargs) -> "Session":
         """Simple factory for manual session creation."""
         return cls(user_id=user_id, **kwargs)
+
+    @classmethod
+    def create_agent_session(
+        cls,
+        agent_id: str,
+        user_id: str = "agent_system",
+        allowed_tools: Optional[List[str]] = None,
+        tenant_id: Optional[str] = None,
+        role: Optional[str] = "agent",
+        max_steps: int = 50,
+        delegation_depth: int = 0,
+        **kwargs,
+    ) -> "Session":
+        """Factory for agentic orchestration sessions."""
+        return cls(
+            user_id=user_id,
+            agent_id=agent_id,
+            allowed_tools=allowed_tools,
+            tenant_id=tenant_id,
+            role=role,
+            max_steps=max_steps,
+            delegation_depth=delegation_depth,
+            **kwargs,
+        )
+
+    def is_agent_session(self) -> bool:
+        """Check if this session represents an autonomous agent."""
+        return self.agent_id is not None
     
     def get_fingerprint(self) -> str:
         """Generate a cryptographic fingerprint of the session."""
@@ -118,3 +176,28 @@ class Session:
             return float(self.tokens_used_session)
         return self.tokens_used_session / elapsed
 
+    def record_tool_call(
+        self,
+        tool_name: str,
+        arguments: Dict[str, Any],
+        result: Optional[Any] = None,
+        blocked: bool = False,
+    ) -> ToolCallRecord:
+        """Record a tool call during agent execution."""
+        record = ToolCallRecord(
+            tool_name=tool_name,
+            arguments=arguments,
+            result=result,
+            blocked=blocked,
+        )
+        self.tool_calls.append(record)
+        return record
+
+    def increment_step(self) -> int:
+        """Advance agent execution step count."""
+        self.current_step += 1
+        return self.current_step
+
+    def has_exceeded_steps(self) -> bool:
+        """Check if agent exceeded maximum allowed iteration steps."""
+        return self.current_step >= self.max_steps

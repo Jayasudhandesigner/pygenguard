@@ -15,15 +15,15 @@ class PlaneResult:
     passed: bool
     risk_score: float  # 0.0 - 1.0
     details: str
-    latency_ms: float
+    latency_ms: float = 0.0
 
 
 @dataclass(frozen=True)
 class Decision:
     """
-    Immutable decision object returned by Guard.inspect().
+    Immutable decision object returned by Guard.inspect() or Guard.inspect_output().
     
-    This is the contract - do not modify structure after v0.1.0.
+    Maintains backward compatibility while supporting output sanitization in v0.3.0.
     """
     
     # Core verdict
@@ -41,6 +41,9 @@ class Decision:
     # Safe fallback for blocked requests
     safe_response: str = "Request blocked by security policy."
     
+    # Sanitized/redacted response text (for output plane inspection)
+    sanitized_response: Optional[str] = None
+    
     # Aggregate risk
     combined_risk_score: float = 0.0
     
@@ -49,7 +52,8 @@ class Decision:
         cls,
         trace_id: str,
         plane_results: Dict[str, PlaneResult],
-        rationale: str = "All security planes passed."
+        rationale: str = "All security planes passed.",
+        sanitized_response: Optional[str] = None
     ) -> "Decision":
         """Factory for allowed decisions."""
         return cls(
@@ -59,6 +63,7 @@ class Decision:
             timestamp=datetime.now(timezone.utc),
             rationale=rationale,
             plane_results=plane_results,
+            sanitized_response=sanitized_response,
             combined_risk_score=cls._calculate_combined_risk(plane_results)
         )
     
@@ -68,7 +73,8 @@ class Decision:
         trace_id: str,
         plane_results: Dict[str, PlaneResult],
         rationale: str,
-        safe_response: str = "Request blocked by security policy."
+        safe_response: str = "Request blocked by security policy.",
+        sanitized_response: Optional[str] = None
     ) -> "Decision":
         """Factory for blocked decisions."""
         return cls(
@@ -79,6 +85,7 @@ class Decision:
             rationale=rationale,
             plane_results=plane_results,
             safe_response=safe_response,
+            sanitized_response=sanitized_response,
             combined_risk_score=cls._calculate_combined_risk(plane_results)
         )
     
@@ -87,7 +94,9 @@ class Decision:
         cls,
         trace_id: str,
         plane_results: Dict[str, PlaneResult],
-        rationale: str
+        rationale: str,
+        safe_response: str = "Request allowed with restrictions.",
+        sanitized_response: Optional[str] = None
     ) -> "Decision":
         """Factory for degraded mode decisions."""
         return cls(
@@ -97,7 +106,8 @@ class Decision:
             timestamp=datetime.now(timezone.utc),
             rationale=rationale,
             plane_results=plane_results,
-            safe_response="Request allowed with restrictions.",
+            safe_response=safe_response,
+            sanitized_response=sanitized_response,
             combined_risk_score=cls._calculate_combined_risk(plane_results)
         )
     
@@ -111,7 +121,7 @@ class Decision:
     
     def to_dict(self) -> dict:
         """Serialize for JSON audit logging."""
-        return {
+        d = {
             "trace_id": self.trace_id,
             "timestamp": self.timestamp.isoformat(),
             "allowed": self.allowed,
@@ -128,3 +138,6 @@ class Decision:
                 for name, pr in self.plane_results.items()
             }
         }
+        if self.sanitized_response is not None:
+            d["sanitized_response"] = self.sanitized_response
+        return d
