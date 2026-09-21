@@ -64,8 +64,21 @@ jobs:
           name: dist-artifacts
           path: dist/
 
-      - name: Publish package to PyPI via Trusted Publishing
+      - name: Publish package to PyPI (API Token)
+        if: env.HAS_PYPI_TOKEN == 'true'
         uses: pypa/gh-action-pypi-publish@release/v1
+        env:
+          HAS_PYPI_TOKEN: ${{ secrets.PYPI_API_TOKEN != '' }}
+        with:
+          packages-dir: dist/
+          password: ${{ secrets.PYPI_API_TOKEN }}
+          skip-existing: true
+
+      - name: Publish package to PyPI (Trusted Publishing OIDC)
+        if: env.HAS_PYPI_TOKEN != 'true'
+        uses: pypa/gh-action-pypi-publish@release/v1
+        env:
+          HAS_PYPI_TOKEN: ${{ secrets.PYPI_API_TOKEN != '' }}
         with:
           packages-dir: dist/
           skip-existing: true
