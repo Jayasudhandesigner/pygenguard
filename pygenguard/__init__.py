@@ -20,8 +20,10 @@ v1.0.0 Features:
 - Structured Output Guard & Deterministic Schema Repairer (Zero-Token Auto-Repair)
 - Topical Boundary Rails (Domain constraint & redirection)
 - OWASP LLM Top 10 & NIST AI RMF Taxonomy Compliance Mapping
-- Drop-in SDK wrappers: OpenAI, Anthropic, Google GenAI, LiteLLM
+- Drop-in SDK wrappers: OpenAI, Anthropic, Google GenAI, LiteLLM, Hugging Face
 - Framework integrations: LangChain, LlamaIndex, CrewAI, FastAPI
+- Enterprise Domain Personas (Medical, Scientific, Tutor, Interviewer, Customer Care)
+- Multi-Architecture Deployment (Gateway, Re-learning filter, Async pipeline, Universal Harness)
 - AsyncGuard for high-concurrency applications
 - Prometheus metrics & OpenTelemetry tracing
 """
@@ -56,9 +58,12 @@ from pygenguard.async_guard import AsyncGuard
 # Streaming guard
 from pygenguard.streaming import StreamingOutputGuard
 
-# SDK Wrappers
-from pygenguard.wrappers import wrap_openai, wrap_anthropic, wrap_google, wrap_litellm
-from pygenguard.wrappers import PyGenGuardSecurityException
+# SDK & Universal Wrappers
+from pygenguard.wrappers import (
+    wrap_openai, wrap_anthropic, wrap_google, wrap_litellm,
+    wrap_huggingface, wrap_model,
+    PyGenGuardSecurityException
+)
 
 # Planes — Core
 from pygenguard.planes import (
@@ -78,6 +83,19 @@ from pygenguard.planes import (
 # Structured Output Guard & Deterministic Schema Repair
 from pygenguard.structured import (
     SchemaValidationResult, DeterministicSchemaRepairer, StructuredOutputGuard
+)
+
+# Enterprise Specialized Personas
+from pygenguard.personas import (
+    PersonaType, PersonaVerdict,
+    MedicalGuard, ScientificGuard, TutorGuard, InterviewerGuard, CustomerCareGuard,
+    create_persona_guard,
+)
+
+# Multi-Architecture Deployment Engines
+from pygenguard.architectures import (
+    GatewayGuardrail, RelearningDatasetFilter, DatasetCurationVerdict,
+    AsyncSecurityPipeline, UniversalHarnessEngine,
 )
 
 # Plugins
@@ -205,6 +223,7 @@ __all__ = [
     "StreamingOutputGuard",
     # Wrappers
     "wrap_openai", "wrap_anthropic", "wrap_google", "wrap_litellm",
+    "wrap_huggingface", "wrap_model",
     "PyGenGuardSecurityException",
     # Planes — Core
     "IdentityPlane", "IntentPlane", "ContextPlane", "EconomicsPlane",
@@ -218,6 +237,13 @@ __all__ = [
     "TopicalBoundaryPlane", "TopicDefinition",
     # Structured Output Guard
     "SchemaValidationResult", "DeterministicSchemaRepairer", "StructuredOutputGuard",
+    # Enterprise Personas
+    "PersonaType", "PersonaVerdict",
+    "MedicalGuard", "ScientificGuard", "TutorGuard", "InterviewerGuard", "CustomerCareGuard",
+    "create_persona_guard",
+    # Multi-Architecture Deployment
+    "GatewayGuardrail", "RelearningDatasetFilter", "DatasetCurationVerdict",
+    "AsyncSecurityPipeline", "UniversalHarnessEngine",
     # Plugins
     "BasePlane", "PlaneRegistry", "plane_plugin", "PlanePhase", "PlaneConfig",
     # Integrations

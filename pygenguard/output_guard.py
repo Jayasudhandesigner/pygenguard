@@ -62,7 +62,8 @@ class OutputGuard:
         output_text: str,
         prompt: Optional[str] = None,
         system_prompt: Optional[str] = None,
-        sanitize: bool = True
+        sanitize: bool = True,
+        **kwargs
     ) -> Decision:
         """
         Inspect generated LLM output for security and compliance violations.
@@ -106,3 +107,6 @@ class OutputGuard:
             
         self._audit.log(decision)
         return decision
+
+    # Alias for pipeline compatibility
+    inspect_output = inspect

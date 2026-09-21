@@ -1,8 +1,9 @@
 """
-PyGenGuard SDK Wrappers - Drop-in security for LLM provider SDKs.
+PyGenGuard SDK Wrappers - Drop-in security for LLM provider SDKs and Open-Source Models.
 """
 
 from pygenguard.wrappers.openai import wrap_openai, PyGenGuardSecurityException
+from pygenguard.wrappers.huggingface import wrap_huggingface, wrap_model
 
 # Lazy imports to avoid requiring SDK dependencies
 def wrap_anthropic(client, **kwargs):
@@ -25,5 +26,7 @@ __all__ = [
     "wrap_anthropic",
     "wrap_google",
     "wrap_litellm",
+    "wrap_huggingface",
+    "wrap_model",
     "PyGenGuardSecurityException",
 ]
