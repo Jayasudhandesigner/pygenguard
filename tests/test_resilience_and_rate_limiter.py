@@ -66,13 +66,18 @@ class TestCircuitBreaker:
     def test_half_open_recovery(self):
         cb = CircuitBreaker(
             "recoverable_cb",
-            CircuitBreakerConfig(failure_threshold=1, recovery_timeout_sec=0.05),
+            CircuitBreakerConfig(failure_threshold=1, recovery_timeout_sec=0.02),
         )
         # Fail once to open
         cb.call(lambda: (_ for _ in ()).throw(Exception("down")))
         assert cb.state == CircuitState.OPEN
 
-        time.sleep(0.06)  # wait for recovery timeout
+        # Reliably wait for recovery timeout across all OS schedulers/runners
+        deadline = time.monotonic() + 1.0
+        while time.monotonic() < deadline:
+            if cb.state == CircuitState.HALF_OPEN:
+                break
+            time.sleep(0.005)
 
         # Successful call transitions through HALF_OPEN back to CLOSED
         res = cb.call(lambda: PlaneResult(plane_name="rec", passed=True, risk_score=0.0, details="ok"))

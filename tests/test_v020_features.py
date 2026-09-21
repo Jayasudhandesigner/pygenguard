@@ -7,9 +7,6 @@ import asyncio
 from unittest.mock import MagicMock, patch
 from datetime import datetime
 
-# Configure pytest-asyncio
-pytestmark = pytest.mark.asyncio
-
 from pygenguard import Guard, Session, Decision, AsyncGuard
 from pygenguard.plugins import BasePlane, PlaneRegistry, PlaneConfig, PlanePhase, PluginLoader
 from pygenguard.plugins.base import PlanePhase

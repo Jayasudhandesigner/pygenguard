@@ -313,7 +313,11 @@ class TestCircuitBreaker30:
             cb.call(fail_fn, "x")
 
         assert cb.state == CircuitState.OPEN
-        time.sleep(0.12)  # Wait for recovery timeout
+        deadline = time.monotonic() + 1.0
+        while time.monotonic() < deadline:
+            if cb.state == CircuitState.HALF_OPEN:
+                break
+            time.sleep(0.005)
 
         def recover_fn(x): return PlaneResult(plane_name="test_plane", passed=True, risk_score=0.0, details="recovered", latency_ms=1.0)
         res = cb.call(recover_fn, "probe")
