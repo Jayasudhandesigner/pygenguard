@@ -7,7 +7,7 @@ before and after model execution.
 
 v1.0.0 Features:
 - Policy-as-Code Engine (Python dict, YAML, JSON)
-- 20 Security Planes across Core, Agentic, and Enterprise domains
+- 21 Security Planes across Core, Agentic, Topical, and Enterprise domains
 - Tokenless System One Execution & Dual-Layer Governance (Jev Engine)
 - Circuit Breaker pattern for resilient plane evaluation
 - Rate Limiting (sliding window + token bucket)
@@ -17,6 +17,9 @@ v1.0.0 Features:
 - Deterministic Data Analysis Guard & Test Harness Engineering
 - Standardized Benchmark Suite in CLI
 - OutputGuard & StreamingOutputGuard for post-generation verification
+- Structured Output Guard & Deterministic Schema Repairer (Zero-Token Auto-Repair)
+- Topical Boundary Rails (Domain constraint & redirection)
+- OWASP LLM Top 10 & NIST AI RMF Taxonomy Compliance Mapping
 - Drop-in SDK wrappers: OpenAI, Anthropic, Google GenAI, LiteLLM
 - Framework integrations: LangChain, LlamaIndex, CrewAI, FastAPI
 - AsyncGuard for high-concurrency applications
@@ -69,6 +72,12 @@ from pygenguard.planes import (
     AgentSecurityContext, ContentSafetyPlane,
     GroundingPlane, ConsensusGate, ModelExtractionGuard, AgentMemoryGuard,
     PricingPlane, ContactPlane, ConfidentialPlane,
+    TopicalBoundaryPlane, TopicDefinition,
+)
+
+# Structured Output Guard & Deterministic Schema Repair
+from pygenguard.structured import (
+    SchemaValidationResult, DeterministicSchemaRepairer, StructuredOutputGuard
 )
 
 # Plugins
@@ -154,9 +163,12 @@ from pygenguard.harness import (
     DeterministicDataGuard, DataColumnConstraint, AnalyticalValidationResult, HarnessScenarioRunner
 )
 
-# Standardized Benchmark Harness
+# Standardized Benchmark Harness & Taxonomy
 from pygenguard.audit.benchmark import (
     BenchmarkHarness, BenchmarkMetric
+)
+from pygenguard.audit.taxonomy import (
+    OWASPCategory, NISTCategory, ComplianceTaxonomyVerdict, OWASPTaxonomyMapper
 )
 
 # Truth & Consistency Engine
@@ -202,6 +214,10 @@ __all__ = [
     "AgentSecurityContext", "ContentSafetyPlane",
     "GroundingPlane", "ConsensusGate", "ModelExtractionGuard", "AgentMemoryGuard",
     "PricingPlane", "ContactPlane", "ConfidentialPlane",
+    # Topical Rails
+    "TopicalBoundaryPlane", "TopicDefinition",
+    # Structured Output Guard
+    "SchemaValidationResult", "DeterministicSchemaRepairer", "StructuredOutputGuard",
     # Plugins
     "BasePlane", "PlaneRegistry", "plane_plugin", "PlanePhase", "PlaneConfig",
     # Integrations
@@ -238,6 +254,8 @@ __all__ = [
     "CompoundRiskCorrelator", "CompoundThreatVerdict",
     "DeterministicDataGuard", "DataColumnConstraint", "AnalyticalValidationResult", "HarnessScenarioRunner",
     "BenchmarkHarness", "BenchmarkMetric",
+    # OWASP & NIST Taxonomy
+    "OWASPCategory", "NISTCategory", "ComplianceTaxonomyVerdict", "OWASPTaxonomyMapper",
     # Truth & Consistency Engine
     "ClaimRelation", "ClaimNode", "ClaimEdge", "ClaimGraph",
     "SemanticDriftTracker", "TruthConsistencyResult", "TruthConsistencyEngine",

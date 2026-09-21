@@ -21,6 +21,7 @@ from pygenguard.planes.grounding import GroundingPlane
 from pygenguard.planes.consensus import ConsensusGate
 from pygenguard.planes.extraction import ModelExtractionGuard
 from pygenguard.planes.memory import AgentMemoryGuard
+from pygenguard.planes.topical import TopicalBoundaryPlane, TopicDefinition
 
 __all__ = [
     "IdentityPlane",
@@ -43,4 +44,6 @@ __all__ = [
     "ConsensusGate",
     "ModelExtractionGuard",
     "AgentMemoryGuard",
+    "TopicalBoundaryPlane",
+    "TopicDefinition",
 ]
